@@ -1,4 +1,5 @@
 import Combine
+import Cocoa
 @preconcurrency import Path
 import Version
 import XCTest
@@ -24,6 +25,51 @@ private final class TestLockedBox<Value: Sendable>: Sendable {
     }
 }
 
+private final class MockURLProtocol: URLProtocol, @unchecked Sendable {
+    typealias Handler = @Sendable (URLRequest) throws -> (Data, HTTPURLResponse)
+
+    private nonisolated(unsafe) static var handler: Handler?
+
+    static func session(handler: @escaping Handler) -> URLSession {
+        self.handler = handler
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [MockURLProtocol.self]
+        return URLSession(configuration: configuration)
+    }
+
+    override class func canInit(with request: URLRequest) -> Bool {
+        true
+    }
+
+    override class func canonicalRequest(for request: URLRequest) -> URLRequest {
+        request
+    }
+
+    override func startLoading() {
+        guard let handler = Self.handler else {
+            client?.urlProtocol(self, didFailWithError: URLError(.badServerResponse))
+            return
+        }
+
+        do {
+            let (data, response) = try handler(request)
+            client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
+            client?.urlProtocol(self, didLoad: data)
+            client?.urlProtocolDidFinishLoading(self)
+        } catch {
+            client?.urlProtocol(self, didFailWithError: error)
+        }
+    }
+
+    override func stopLoading() {}
+}
+
+private extension NSView {
+    func recursiveSubviews<T: NSView>(ofType type: T.Type) -> [T] {
+        subviews.compactMap { $0 as? T } + subviews.flatMap { $0.recursiveSubviews(ofType: type) }
+    }
+}
+
 @MainActor
 class AppStateTests: XCTestCase {
     var subject: AppState!
@@ -32,6 +78,60 @@ class AppStateTests: XCTestCase {
         Current = .mock
         syncXcodesKitMocks()
         subject = AppState()
+    }
+
+    func test_PinCodeTextView_MarksDigitFieldsAsOneTimeCode() {
+        let pinCodeTextView = PinCodeTextView(numberOfDigits: 6, itemSpacing: 10)
+
+        let editableTextFields = pinCodeTextView.recursiveSubviews(ofType: NSTextField.self)
+            .filter(\.isEditable)
+
+        XCTAssertEqual(editableTextFields.count, 6)
+        XCTAssertTrue(editableTextFields.allSatisfy { $0.contentType == .oneTimeCode })
+    }
+
+    func test_PinCodeTextView_PastedCodeIsDistributedAcrossDigitFields() {
+        let pinCodeTextView = PinCodeTextView(numberOfDigits: 6, itemSpacing: 10)
+        var changedCodes: [String] = []
+        pinCodeTextView.codeDidChange = { changedCodes.append($0) }
+
+        let inputTextField = pinCodeTextView.recursiveSubviews(ofType: NSTextField.self)
+            .first { $0.isEditable }!
+        inputTextField.stringValue = "123 456"
+
+        pinCodeTextView.controlTextDidChange(Notification(name: NSControl.textDidChangeNotification, object: inputTextField))
+
+        XCTAssertEqual(changedCodes.last, "123456")
+    }
+
+    func test_ChoosePhoneNumberForSMS_WithOneTrustedPhoneNumberRequestsSMS() async throws {
+        let trustedPhoneNumber = AuthOptionsResponse.TrustedPhoneNumber(id: 7, numberWithDialCode: "(•••) •••-••90")
+        let authOptions = AuthOptionsResponse(
+            trustedPhoneNumbers: [trustedPhoneNumber],
+            trustedDevices: nil,
+            securityCode: .init(length: 6)
+        )
+        let sessionData = AppleSessionData(serviceKey: "service-key", sessionID: "session-id", scnt: "scnt")
+        Current.network = Network(session: MockURLProtocol.session { request in
+            XCTAssertEqual(request.url?.absoluteString, "https://idmsa.apple.com/appleauth/auth/verify/phone")
+            XCTAssertEqual(request.httpMethod, "PUT")
+            XCTAssertEqual(request.value(forHTTPHeaderField: "X-Apple-ID-Session-Id"), "session-id")
+            XCTAssertEqual(request.value(forHTTPHeaderField: "X-Apple-Widget-Key"), "service-key")
+            XCTAssertEqual(request.value(forHTTPHeaderField: "scnt"), "scnt")
+            return (Data(), HTTPURLResponse(url: request.url!, statusCode: 204, httpVersion: nil, headerFields: nil)!)
+        })
+
+        subject.choosePhoneNumberForSMS(authOptions: authOptions, sessionData: sessionData)
+        for _ in 0..<100 where subject.presentedSheet == nil && subject.authError == nil {
+            try await Task.sleep(nanoseconds: 10_000_000)
+        }
+
+        XCTAssertNil(subject.authError)
+        guard case let .twoFactor(secondFactorData) = subject.presentedSheet else {
+            XCTFail("Expected the SMS code-entry sheet to be presented")
+            return
+        }
+        XCTAssertEqual(secondFactorData.option, .smsSent(trustedPhoneNumber))
     }
     
     func test_ParseCertificateInfo_Succeeds() throws {

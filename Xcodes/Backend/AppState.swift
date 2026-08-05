@@ -343,6 +343,11 @@ class AppState: ObservableObject {
     }
 
     func choosePhoneNumberForSMS(authOptions: AuthOptionsResponse, sessionData: AppleSessionData) {
+        if authOptions.trustedPhoneNumbers?.count == 1, let trustedPhoneNumber = authOptions.trustedPhoneNumbers?.first {
+            requestSMS(to: trustedPhoneNumber, authOptions: authOptions, sessionData: sessionData)
+            return
+        }
+
         self.presentedSheet = .twoFactor(.init(
             option: .smsPendingChoice,
             authOptions: authOptions,
