@@ -135,25 +135,25 @@ class PinCodeTextView: NSControl, NSTextFieldDelegate {
                 return true
             }
         }
-        
+
         // Perform default behaviour
         return false
     }
-    
+
     func controlTextDidChange(_ obj: Notification) {
         guard
             let field = obj.object as? NSTextField,
             isEnabled,
             let fieldIndex = characterViews.firstIndex(where: { $0 === field })
-        else { return } 
-        
+        else { return }
+
         let newFieldText = field.stringValue
-        
+
         // Handle pasting multiple characters (e.g., pasting "123456" from clipboard)
         if newFieldText.count > 1 {
             // Filter to alphanumeric characters only
             let validCharacters = newFieldText.filter { $0.isLetter || $0.isNumber }
-            
+
             // Always start from the first field and clear previous content
             var newCode = Array(repeating: Character?.none, count: numberOfDigits)
             for (offset, character) in validCharacters.enumerated() {
@@ -161,10 +161,10 @@ class PinCodeTextView: NSControl, NSTextFieldDelegate {
                     newCode[offset] = character
                 }
             }
-            
+
             // Update all fields at once to avoid triggering didSet multiple times
             code = newCode
-            
+
             // Move focus to next empty field or the last field if all are filled
             let nextEmptyIndex = code.firstIndex(where: { $0 == nil }) ?? numberOfDigits - 1
             if nextEmptyIndex < characterViews.count {
@@ -172,10 +172,10 @@ class PinCodeTextView: NSControl, NSTextFieldDelegate {
             } else {
                 resignFirstResponder()
             }
-            
+
             return
         }
-        
+
         // Handle single character input
         let lastCharacter: Character?
         if newFieldText.isEmpty {
@@ -185,7 +185,7 @@ class PinCodeTextView: NSControl, NSTextFieldDelegate {
         }
 
         code[fieldIndex] = lastCharacter
-        
+
         if lastCharacter != nil {
             if fieldIndex >= characterViews.count - 1 {
                 resignFirstResponder()
@@ -227,6 +227,7 @@ class PinCodeCharacterTextField: NSTextField {
 
         wantsLayer = true
         alignment = .center
+        contentType = .oneTimeCode
         maximumNumberOfLines = 1
         font = .boldSystemFont(ofSize: 48)
         
