@@ -1,4 +1,5 @@
 import AppKit
+import AsyncNetworkService
 import XcodesLoginKit
 import XcodesLoginKitSecurityKey
 import Path
@@ -1001,7 +1002,7 @@ class AppState: ObservableObject {
 
     private func handleInstallError(_ error: Error, id: XcodeID) {
         // Prevent setting the app state error if it is an invalid session, we will present the sign in view instead
-        if let error = error as? AuthenticationError, case .notAuthorized = error {
+        if Self.isUnauthorizedInstallError(error) {
             self.error = error
             self.presentedAlert = .unauthenticated
 
@@ -1012,6 +1013,23 @@ class AppState: ObservableObject {
         if let index = self.allXcodes.firstIndex(where: { $0.id == id }) {
             self.allXcodes[index].installState = .notInstalled
         }
+    }
+
+    static func isUnauthorizedInstallError(_ error: Error) -> Bool {
+        if let authenticationError = error as? AuthenticationError {
+            switch authenticationError {
+            case .notAuthorized, .badStatusCode(statusCode: 401, data: _, response: _):
+                return true
+            default:
+                break
+            }
+        }
+
+        guard let networkError = error as? NetworkError,
+              case .non200StatusCode(statusCode: 401, data: _) = networkError else {
+            return false
+        }
+        return true
     }
 
     /// removes saved username and credentials stored in keychain

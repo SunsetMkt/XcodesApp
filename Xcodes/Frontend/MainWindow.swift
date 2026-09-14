@@ -195,7 +195,7 @@ struct MainWindow: View {
                 title: Text("Alert.Install.Error.Title"),
                 message: Text("Alert.Install.AuthError.Message"),
                 primaryButton: .default(
-                    Text("OK"),
+                    Text("Login"),
                     action: {
                         appState.presentedSheet = .signIn
                     }

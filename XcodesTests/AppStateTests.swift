@@ -1,5 +1,6 @@
 import Combine
 import Cocoa
+import AsyncNetworkService
 @preconcurrency import Path
 import Version
 import XCTest
@@ -78,6 +79,18 @@ class AppStateTests: XCTestCase {
         Current = .mock
         syncXcodesKitMocks()
         subject = AppState()
+    }
+
+    func test_InstallError_Network401IsUnauthorized() {
+        let error = NetworkError.non200StatusCode(statusCode: 401, data: Data())
+
+        XCTAssertTrue(AppState.isUnauthorizedInstallError(error))
+    }
+
+    func test_InstallError_OtherNetworkStatusIsNotUnauthorized() {
+        let error = NetworkError.non200StatusCode(statusCode: 500, data: Data())
+
+        XCTAssertFalse(AppState.isUnauthorizedInstallError(error))
     }
 
     func test_PinCodeTextView_MarksDigitFieldsAsOneTimeCode() {

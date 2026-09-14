@@ -2083,7 +2083,7 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "You are not authorized. Please Sign in with your Apple ID first."
+            "value" : "Your Apple ID session may have expired. Try logging in again using the Login button in the top navigation bar."
           }
         },
         "es" : {
