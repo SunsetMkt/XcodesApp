@@ -214,7 +214,7 @@ class AppStateTests: XCTestCase {
         XCTAssertNil(subject.presentedAlert)
     }
 
-    func test_CreateSymbolicLink_UsesProvidedInstalledPath() throws {
+    func test_CreateSymbolicLink_UsesProvidedInstalledPath() async throws {
         let installDirectory = try XCTUnwrap(Path(
             NSTemporaryDirectory()
                 .appending("XcodesAppStateTests-")
@@ -229,7 +229,7 @@ class AppStateTests: XCTestCase {
             key == "installPath" ? installDirectory.string : nil
         }
 
-        subject.createSymbolicLink(to: installedXcodePath)
+        await subject.createSymbolicLink(to: installedXcodePath)
 
         let destination = try FileManager.default.destinationOfSymbolicLink(atPath: symlinkPath.string)
         XCTAssertEqual(destination, installedXcodePath.string)
@@ -434,6 +434,35 @@ class AppStateTests: XCTestCase {
 
         Current.network.session = replacementSession
         XCTAssertTrue(Current.network.loginClient.urlSession === replacementSession)
+    }
+
+    func test_RestoreAuthenticationStateIfNeeded_UsesPersistedSession() async throws {
+        let appleSession = try JSONDecoder().decode(
+            AppleSession.self,
+            from: Data(#"{"user":{"fullName":"Jane Developer"}}"#.utf8)
+        )
+        let expectedState = AuthenticationState.authenticated(appleSession)
+        Current.defaults.string = { key in
+            key == "username" ? "jane@example.com" : nil
+        }
+        Current.network.validateSessionAsync = { expectedState }
+
+        try await subject.restoreAuthenticationStateIfNeeded()
+
+        XCTAssertEqual(subject.authenticationState, expectedState)
+    }
+
+    func test_RestoreAuthenticationStateIfNeeded_SkipsValidationWithoutSavedUsername() async throws {
+        let didValidate = TestLockedBox(false)
+        Current.network.validateSessionAsync = {
+            didValidate.withValue { $0 = true }
+            return .unauthenticated
+        }
+
+        try await subject.restoreAuthenticationStateIfNeeded()
+
+        XCTAssertFalse(didValidate.read { $0 })
+        XCTAssertEqual(subject.authenticationState, .unauthenticated)
     }
 
     func test_DownloadRuntimeViaXcodeBuild_ClearsRuntimeTaskWhenComplete() async throws {
@@ -699,7 +728,7 @@ class AppStateTests: XCTestCase {
                 return true
             }
         }
-        Xcodes.Current.network.validateSessionAsync = { }
+        Xcodes.Current.network.validateSessionAsync = { .unauthenticated }
         Xcodes.Current.network.loadData = { urlRequest in
             if urlRequest.url! == URLRequest.developerDownloads.url! {
                 let downloads = Downloads(resultCode: 0, resultsString: nil, downloads: [Download(name: "Xcode 0.0.0", files: [Download.File(remotePath: "https://apple.com/xcode.xip", fileSize: 9484444)], dateModified: Date())])
@@ -961,6 +990,22 @@ class AppStateTests: XCTestCase {
         } catch {
             XCTFail("Unexpected error: \(error)")
         }
+    }
+
+    func test_InstallNotificationTitle_DoesNotDuplicateMajorVersion() {
+        XCTAssertEqual(
+            AppState.installNotificationTitle(for: Version(major: 27, minor: 0, patch: 0, prereleaseIdentifiers: ["beta", "4"])),
+            "27.0 Beta 4"
+        )
+        XCTAssertEqual(
+            AppState.installNotificationTitle(for: Version(major: 26, minor: 5, patch: 0)),
+            "26.5"
+        )
+        // Stable release with patch
+        XCTAssertEqual(
+            AppState.installNotificationTitle(for: Version(major: 10, minor: 2, patch: 1)),
+            "10.2.1"
+        )
     }
 
     private func recordAllXcodeInstallStates(during operation: () async throws -> Void) async throws -> [[XcodeInstallState]] {

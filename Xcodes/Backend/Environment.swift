@@ -168,7 +168,7 @@ public struct Network: Sendable {
         downloadTaskAsync(url, saveLocation, resumeData)
     }
     
-    public var validateSessionAsync: @Sendable () async throws -> Void
+    public var validateSessionAsync: @Sendable () async throws -> AuthenticationState
 
     public var signout: @Sendable () -> Void
 
@@ -176,7 +176,7 @@ public struct Network: Sendable {
         session: URLSession? = nil,
         loadData: (@Sendable (URLRequest) async throws -> (Data, URLResponse))? = nil,
         downloadTaskAsync: (@Sendable (URL, URL, Data?) -> (Progress, Task<(saveLocation: URL, response: URLResponse), Error>))? = nil,
-        validateSessionAsync: (@Sendable () async throws -> Void)? = nil,
+        validateSessionAsync: (@Sendable () async throws -> AuthenticationState)? = nil,
         signout: (@Sendable () -> Void)? = nil
     ) {
         let loginClient: XcodesLoginKit.Client
@@ -193,7 +193,7 @@ public struct Network: Sendable {
             loginClient.urlSession.downloadTaskAsync(with: url, to: saveLocation, resumingWith: resumeData)
         }
         self.validateSessionAsync = validateSessionAsync ?? {
-            _ = try await loginClient.validateSession()
+            try await loginClient.validateSession()
         }
         self.signout = signout ?? {
             loginClient.signout()
@@ -208,7 +208,7 @@ public struct Network: Sendable {
             loginClient.urlSession.downloadTaskAsync(with: url, to: saveLocation, resumingWith: resumeData)
         }
         self.validateSessionAsync = {
-            _ = try await loginClient.validateSession()
+            try await loginClient.validateSession()
         }
         self.signout = {
             loginClient.signout()
@@ -285,4 +285,11 @@ public struct Helper: Sendable {
     var addStaffToDevelopersGroupAsync: @Sendable () async throws -> Void = { try await helperClient.addStaffToDevelopersGroupAsync() }
     var acceptXcodeLicenseAsync: @Sendable (_ absoluteXcodePath: String) async throws -> Void = { try await helperClient.acceptXcodeLicenseAsync(absoluteXcodePath: $0) }
     var runFirstLaunchAsync: @Sendable (_ absoluteXcodePath: String) async throws -> Void = { try await helperClient.runFirstLaunchAsync(absoluteXcodePath: $0) }
+    var moveAppAsync: @Sendable (_ source: String, _ destination: String) async throws -> Void = { try await helperClient.moveAppAsync(at: $0, to: $1) }
+    var createSymbolicLinkAsync: @Sendable (_ source: String, _ destination: String) async throws -> Void = { try await helperClient.createSymbolicLinkAsync(source: $0, destination: $1) }
+    var renameAsync: @Sendable (_ source: String, _ destination: String) async throws -> Void = { try await helperClient.renameAsync(source: $0, destination: $1) }
+    var removeAsync: @Sendable (_ path: String) async throws -> Void = { try await helperClient.removeAsync(path: $0) }
+    var usePrivilegedHelperForFileOperations: Bool {
+        Current.defaults.bool(forKey: PreferenceKey.usePrivilegeHelperForFileOperations.rawValue) ?? false
+    }
 }

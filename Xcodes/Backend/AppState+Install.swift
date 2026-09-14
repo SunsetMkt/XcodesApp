@@ -10,6 +10,10 @@ import XcodesLoginKit
 /// Downloads and installs Xcodes
 extension AppState {
 
+    static func installNotificationTitle(for version: Version) -> String {
+        version.appleDescription
+    }
+
     // check to see if we should auto install for the user
     public func autoInstallIfNeeded() {
         guard let storageValue = Current.defaults.get(forKey: "autoInstallation") as? Int, let autoInstallType = AutoInstallationType(rawValue: storageValue) else { return }
@@ -250,7 +254,14 @@ extension AppState {
         XcodeUnarchiveService(
             unarchive: { _ = try await self.unxipOrUnxipExperimentAsync($0) },
             fileExists: { path in Current.files.fileExists(atPath: path) },
-            moveItem: { source, destination in try Current.files.moveItem(at: source, to: destination) },
+            moveItem: { source, destination in
+                if Current.helper.usePrivilegedHelperForFileOperations {
+                    try await self.installHelperIfNecessaryAsync()
+                    try await Current.helper.moveAppAsync(source.path, destination.path)
+                } else {
+                    try Current.files.moveItem(at: source, to: destination)
+                }
+            },
             removeItem: { url in try Current.files.removeItem(at: url) }
         )
     }
@@ -471,7 +482,7 @@ extension AppState {
 
         let xcode = allXcodes[index]
         if postNotification {
-            Current.notificationManager.scheduleNotification(title: xcode.version.major.description + "." + xcode.version.appleDescription, body: step.description, category: .normal)
+            Current.notificationManager.scheduleNotification(title: AppState.installNotificationTitle(for: xcode.version), body: step.description, category: .normal)
         }
     }
 
